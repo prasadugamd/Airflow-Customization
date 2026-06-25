@@ -1,0 +1,24 @@
+{{- $has_http2ports := ternary true false (gt (len (.Values.service.http2ports | default "")) 0 ) }}
+{{- $has_cust_http2ports := ternary true false (gt (len (.Values.service.custom_http2ports | default "")) 0 ) }}
+{{- if or $has_http2ports $has_cust_http2ports }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.app.name }}-srv-http2
+  labels:
+     app: {{ .Values.app.name }}
+     monitored: prometheus
+spec:
+  type: {{ .Values.service.http2ports.type }}
+  selector:
+    app: {{ .Values.app.name }}
+  ports:
+{{- if $has_http2ports }}
+{{ toYaml .Values.service.http2ports.ports | indent 2 }}
+{{- end }}
+
+{{- if $has_cust_http2ports }}
+{{ toYaml .Values.service.custom_http2ports.ports | indent 2 }}
+{{- end }}
+
+{{- end }}

@@ -1,0 +1,46 @@
+# This is default values for avmrest on top of values file
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+app:
+  name: airflow
+
+ports:
+  airflow_webserver_port: 1031
+  airflow_statsd_mon_webserver_port: 1035
+  airflow_statsd_port: 8125
+
+service:
+  tcpports:
+    type: LoadBalancer
+    ports:
+    - name: airflow-webserver-port
+      port: 1031
+      protocol: TCP
+      targetPort: 1031
+    - name: tc-metrics
+      port: 1035
+      protocol: TCP
+      targetPort: 1035
+    - name: tools-node-exporter-port
+      port: 21180
+      protocol: TCP
+      targetPort: 21180
+
+# Ingress (nginx + external-dns). When enabled, service-tcp renders as ClusterIP.
+# TLS secret airflow-tls must exist in the release namespace (customer-signed cert).
+ingress:
+  enabled: false
+  name: airflow-ingress
+  host: airflow.int.corp.amdocs.azr
+  path: /
+  pathType: Prefix
+  backendPortNumber: 1031
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "false"
+    external-dns.alpha.kubernetes.io/hostname: airflow.int.corp.amdocs.azr
+  tls:
+    enabled: true
+    secretName: airflow-tls

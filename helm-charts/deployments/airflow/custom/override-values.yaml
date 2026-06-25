@@ -1,0 +1,60 @@
+resources:
+  container:
+    tools:
+      requests:
+        memory: "500Mi"
+        cpu: "500m"
+      limits:
+        memory: "1Gi"
+        cpu: "1"
+    primary:
+      requests:
+        memory: "10Gi"
+        cpu: "2"
+      limits:
+        memory: "15Gi"
+        cpu: "4"
+acd_variables:
+  RETRIES_NUM: 0
+  add_host_aliases: "Y"
+  AIRFLOW_WEBSERVER_CONFIG_CUSTOMIZATION: "True"
+env_variables:
+  shared_pbin_path: "/tc_nfs/int01/SHARED_PBIN"
+  apply_pf_from_shared_pbin: "Y"
+  # Ping/OIDC overrides — survive entrypoint regeneration of airflow.cfg
+  # Keys are upper-cased by the chart, becoming AIRFLOW__<SECTION>__<KEY>
+  AIRFLOW__CORE__AUTH_MANAGER: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
+  AIRFLOW__WEBSERVER__BASE_URL: "https://airflow.int.corp.amdocs.azr"
+  AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: "True"
+  AIRFLOW__AMDOCS_OAUTH__AMDOCS_OAUTH_ENABLED: "True"
+hosts_aliases:
+- ip: 10.57.233.30
+  name: int-01-bastion-vmss000000
+- ip: 10.57.233.28
+  name: int-01-consul01-vmss000000
+- ip: 10.57.233.40
+  name: int-01-consul02-vmss000000
+- ip: 10.57.233.32
+  name: int-01-consul03-vmss000000
+- ip: 10.57.233.18
+  name: int-01-master01-vmss000000
+- ip: 10.57.233.38
+  name: int-01-tca3s01-vmss000000
+- ip: 10.57.233.34
+  name: int-01-tccli01-vmss000000
+- ip: 10.57.233.36
+  name: int-01-tcuh01-vmss000000
+- ip: 10.57.233.42
+  name: int-01-tcuh02-vmss000000
+- ip: 10.57.233.10
+  name: int-01-cdhmng01.int.corp.amdocs.azr
+- ip: 10.57.233.15
+  name: int-01-cdhmng02.int.corp.amdocs.azr
+- ip: 10.57.233.22
+  name: int-01-cdhmng03.int.corp.amdocs.azr
+- ip: 10.57.233.13
+  name: int-01-cdhdat01.int.corp.amdocs.azr
+- ip: 10.57.233.24
+  name: int-01-cdhdat02.int.corp.amdocs.azr
+- ip: 10.57.233.20
+  name: int-01-cdhdat03.int.corp.amdocs.azr

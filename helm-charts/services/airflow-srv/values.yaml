@@ -1,0 +1,307 @@
+acd_variables:
+  imdg_group_id: 0
+  avm_fg: 0
+  pr_groups: "--group=AIRFLOW:1"
+  avm_agent_run_mode: ""
+  free_replacements: ""
+  process_name:  ""
+  desired_replicas: 1
+  ela_collector_indx: 0
+  avm_cluster_id: 1
+  user_name: "xpiwrk1"
+  fu: "AIRFLOW"
+  fu_for_helm: "airflow"
+  livenessInitialDelaySeconds: 300
+  TZ: "Europe/Vienna"
+  k8s_env: "TRUE"
+  imdg_network_id: 6111
+  imdg_lib_name: "libgaprgemfireutils.so"
+  imdg_wallet_lib_name: "libgaprwallet.so"
+  env_code: "int01"
+  market: "m3g"
+  work_with_external_ips: "N"
+  work_with_metallb: "N"
+  k8s_on_eks: "Y"
+  k8s_deployment_type: "Azure"
+  k8s_load_balancer_type: "AKS"
+  set_security_context: "Y"
+  work_with_openshift: "N"
+  enable_pod_topology_spread : "Y"
+  k8s_cluster_with_multiple_availability_zones: "Y"
+  db_update_id: 1
+  DATABASE_TYPE: "PG"
+  TCMON_ENABLED: "N"
+  TCMON_ELS_HOST: ""
+  TCMON_ELS_PORT: "9200"
+  TCMON_ENV_UNIQUE_ID: ""
+  TCMON_LOGSTASH_ENABLE: "N"
+  TCMON_AVM_P8S_PORT: "9101"
+  tcmon_using_ssl: "N"
+  custom_image_exists: "Y"
+  SEARCH_PATH_ENV: "taapp1-int-01-master01-vmss000000"
+  master_token: "MyToken"
+  hbase_keytab_file_name: "taapp1.keytab"
+  hbase_admin_keytab_file_name: "taapp1.keytab"
+  hbase_keytab_path: "/users/taapp1"
+  add_host_aliases: "N"
+  data_encryption: "TRUE"
+  pod_debug_mode: "N"
+  use_node_selector: "Y"
+  enable_var_pvc: "Y"
+  var_pvc_name: "nfs-pvc-01"
+  tc_var_nfs_mount_path: "/tc_nfs"
+  enable_interfaces_pvc: "Y"
+  enable_interfaces_replicated_pvc: "N"
+  interfaces_pvc_name: "nfs-interfaces-pvc-01"
+  interfaces_pvc_replicated_name: "nfs-interfaces-replicated-pvc"
+  tc_interfaces_nfs_mount_path: "/tc_interfaces_nfs"
+  tc_interfaces_nfs_replicated_mount_path: "/tc_interfaces_nfs_replicated"
+  kafka_multi_tenant: "N"
+  mtls_enabled: "true"
+  Inst_Encrypt_Data_In_Transit: "N"
+  Encrypt_TC_Process_Comm: "N"
+  Encrypt_CR_External_Connections: "N"
+  Encrypt_IMDG_Access: "Y"
+  enable_resources_management: "Y"
+  pg_tls_mode: "PG_TLS_1B"
+  use_taints_and_tolerations: "Y"
+  tc_workload_node_taint_key: "workload_type"
+  tc_workload_node_taint_value: "tc"
+  tc_workload_node_taint_effect: "NoSchedule"
+  consul_tls_mode: "true"
+  tc_tls_mode: "Y"
+  TC_Liquibase_Build_label: "TC_Liquibase_25.06.01.14"
+  hbase_tls_enabled: "true"
+  use_pod_priority_and_preemption: "N"
+  job_list_requires_hive: "JHB1BCV JHB1HB2HV"
+  pg_bouncer_agent_enabled: "N"
+  pg_bouncer_port: "5432"
+  pg_bouncer_host: "eaaspdb.int.corp.amdocs.azr"
+  skip_set_app_name_for_pg_bouncer: "N"
+  
+  pg_bouncer_airflow_enabled: "N"
+  k8s_tc_ms_namespace: "int01-tcms"
+  AIRFLOW_DB: "airflow"
+  AIRFLOW_DB_USER: "airflow"
+  AIRFLOW_DB_PORT: "5432"
+  AIRFLOW_DB_MACHINE: "postgres-pg-int-01.postgres.database.azure.com"
+  AIRFLOW__CORE__KILLED_TASK_CLEANUP_TIME: "604800"
+  OP_RUNJOBS_VIA_AIRFLOW: N
+  op_cleanup_delete_print: "FALSE"
+  op_cleanup_wait_hours: "1"
+  airflow_cert_home: "/home/xpiwrk1/certificates/AIRFLOW"
+  ADD_AIRFLOW_DB_CLEANUP_TO_EOD: "TRUE"
+  EMAIL_ON_SUCCESS: "False"
+  AIRFLOW_EXECUTOR: "LocalExecutor"
+  AIRFLOW_PARALLELISM: "50"
+  AIRFLOW_DAG_CONCURRENCY: "20"
+  AIRFLOW_DAGS_ARE_PAUSED_AT_CREATION: "False"
+  AIRFLOW_MAX_ACTIVE_RUNS_PER_DAG: "1"
+  AIRFLOW_LOAD_EXAMPLE: "False"
+  AIRFLOW_FERNET_KEY: "J6TKip54InakMGthS0NGTSCO8634lqxGp3fa8w--3EA="
+  AIRFLOW_SQL_ALCHEMY_POOL_SIZE: "8"
+  AIRFLOW_CLEAN_OLDER_SCHEDULE_DAG_RUN: 60
+  AIRFLOW_LOGGING_LEVEL: "INFO"
+  AIRFLOW_LOGGING_CONFIG_CLASS: "log_config.LOGGING_CONFIG"
+  AIRFLOW_STATSD_ON: "True"
+  AIRFLOW_API_AUTH_BACKEND: "airflow.api.auth.backend.basic_auth"
+  AIRFLOW_DAG_DEFAULT_VIEW: "graph"
+  AIRFLOW_HIDE_PAUSED_DAGS_BY_DEFAULT: "True"
+  AIRFLOW_RBAC: "True"
+  AIRFLOW_AUTHENTICATE: "True"
+  AIRFLOW_AUTH_BACKEND: "airflow.contrib.auth.backends.password_auth"
+  AIRFLOW_SCHEDULER_HEARTBEAT_SEC: 15
+  AIRFLOW_MIN_FILE_PROCESS_INTERVAL: 30
+  AIRFLOW_DAG_DIR_LIST_INTERVAL: 100
+  AIRFLOW_AUDITLOG_ENABLE_CHECK: "False"
+  AIRFLOW_JOB_CMD_TIMEOUT: "36000"
+  AIRFLOW_AUDITLOG_SECOND: 5
+  AIRFLOW_WEBSERVER_CONFIG_CUSTOMIZATION: False
+  EMAIL_ON_FAILURE: "False"
+  ALERT_EMAIL_FROM: "airflow@example.com"
+  OWNER_EMAIL: "changeme@amdocs.com"
+  RETRIES_NUM: "1"
+  RETRY_DELAY: "1"
+  DAG_TIMEOUT: "1440"
+  ENABLE_DAG_RECOVERY_ON_RESTART: "FALSE"
+  DAG_RECOVERY_TO_MAILIDS: ""
+  DAG_RECOVERY_CC_MAILIDS: ""
+  
+  AA_REMARK: "#"
+  k8s_logging: "both"
+
+topologySpreadConstraints:
+  whenUnsatisfiable: "ScheduleAnyway"
+
+
+env_variables:
+  shared_pbin_path: "/tc_nfs/int01/SHARED_PBIN"
+  apply_pf_from_shared_pbin: "N"
+  tc_conf_data_encrypted: "FALSE"
+  cached_profile_optimization: "TRUE"
+
+acd_service_variables:
+  metallb_address_pool_name: "default"
+  shared_ip_group_name: "int01"
+  externalips:
+    - 10.57.234.15
+  externalTrafficPolicy: "Local"
+
+  aws_lb_target_node_labels: "env_code=int-01"
+
+service_annotations:
+  global:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    service.beta.kubernetes.io/azure-load-balancer-internal-subnet: "snet-at-a1g-Billing-INT-we-001-Access"
+  tcp:
+  udp:
+
+
+common_image:
+  repository: "10.57.226.135:5001"
+  name: "oracle/app/64og/common_airflow/run_debug"
+  tag: "TC_Product_25.06.01.20_PG"
+  pullPolicy: IfNotPresent
+
+fu_image:
+  repository: "10.57.226.135:5001"
+  name: "noos/app/64og/airflow/static_fu"
+  tag: "TC_Product_25.06.01.20_PG"
+  pullPolicy: IfNotPresent
+
+avm_agent_image:
+  repository: "10.57.226.135:5001"
+  name: "noos/app/64og/avm_agent/static_fu"
+  tag: "TC_Product_25.06.01.20_PG"
+  pullPolicy: IfNotPresent
+
+tools_image:
+  repository: "10.57.226.135:5001"
+  name: "oracle/app/64og/common_airflow/run_debug"
+  tag: "TC_Product_25.06.01.20_PG"
+  pullPolicy: IfNotPresent
+
+custom:
+  repository: "10.57.226.135:5001"
+  name: "noos/app/64og/airflow/cust"
+  tag: "271_tc_cust_product-271_TC_Dev_250_PG"
+  pullPolicy: IfNotPresent
+
+app:
+  name: airflow
+
+nexus:
+  secretname: "nexus"
+
+# Node selector labels - allow to schedule the pod(s) in specific nodes that have label(s) identical to the label(s) defined in the nodeSelector
+# To use this feature there is a need to enable acd_varaiable 'use_node_selector' to be "Y"
+# example of command to add a label to a node: kubectl label nodes eaasrt6 env_code=xpi1
+# you can custom your nodeSelector labels by adding 'key: value' to the below dict in custom/override-values.yaml
+node_selector_labels:
+  env_code: int-01
+
+
+# Managing Resources for Containers
+# To use this feature there is a need to enable acd_varaiable 'enable_resources_management' to be "Y"  . once enabled you may/may not set the requests and/or limits for each container : tools,avm_agent,primary.
+# Explanation - If the node where a Pod is running has enough of a resource available, it's possible (and allowed) for a container to use more resource than its request for that resource specifies.
+# However, a container is not allowed to use more than its resource limit.
+# Limits and requests for CPU resources are measured in cpu units. One cpu, in Kubernetes, is equivalent to 1 vCPU/Core for cloud providers and 1 hyperthread on bare-metal Intel processors. Fractional requests are allowed
+# Limits and requests for memory are measured in bytes. You can express memory as a plain integer or as a fixed-point number using one of these suffixes: Gi, Mi, Ki
+resources:
+  container:
+    tools:
+      requests:
+        memory: "500Mi"
+        cpu: "500m"
+      limits:
+        memory: "1Gi"
+        cpu: "1"
+    avm_agent:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1"
+    primary:
+      requests:
+        memory: "10Gi"
+        cpu: "2"
+      limits:
+        memory: "15Gi"
+        cpu: "4"
+
+# Horizontal Pod Autoscaler configuration
+# The Horizontal Pod Autoscaler automatically scales the number of Pods ( in between the min-max replicas conf) in the deployment based on observed CPU utilization
+hpa:
+  min_replicas: 1
+  max_replicas: 1
+  target_cpu_util_precentage: 80
+
+# Pod Priority and Preemption configuration
+# Pod Priority and Preemption -  Pods can have priority. Priority indicates the importance of a Pod relative to other Pods. If a Pod cannot be scheduled, the scheduler tries to preempt (evict) lower priority Pods to make scheduling of the pending Pod possible.
+# To use this feature there is a need to enable acd_varaiable 'use_pod_priority_and_preemption' to be "Y". cluster admin should add the relevant PriorityClass object specified in priority_class.name field below.
+priority_class:
+  name: "tc-cpp-app-high-priority"
+
+
+# Pod annotations configuration
+# You can custom your pod annotations by adding 'key: value' to the below dict in custom/override-values.yaml
+annotations:
+
+# Pod security context configuration
+# You can custom security context configuration by adding 'key: value' to the below dict in custom/override-values.yaml
+securityContext:
+  runAsNonRoot: true
+  capabilities:
+    drop:  ["ALL"]
+
+
+# Pod/Node affinity override configuration
+# You can custom the affinity configuration by adding the below affinity dict in custom/override-values.yaml with your own implementation.
+# affinity:
+
+# This is default values for avmrest on top of values file
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+app:
+  name: airflow
+
+ports:
+  airflow_webserver_port: 1031
+  airflow_statsd_mon_webserver_port: 1035
+  airflow_statsd_port: 8125
+
+service:
+  tcpports:
+    type: LoadBalancer
+    ports:
+    - name: airflow-webserver-port
+      port: 1031
+      protocol: TCP
+      targetPort: 1031
+    - name: tc-metrics
+      port: 1035
+      protocol: TCP
+      targetPort: 1035
+    - name: tools-node-exporter-port
+      port: 21180
+      protocol: TCP
+      targetPort: 21180
+
+ingress:
+  enabled: false
+  name: airflow-ingress
+  host: airflow.int.corp.amdocs.azr
+  path: /
+  pathType: Prefix
+  backendPortNumber: 1031
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "false"
+    external-dns.alpha.kubernetes.io/hostname: airflow.int.corp.amdocs.azr
+  tls:
+    enabled: true
+    secretName: airflow-tls

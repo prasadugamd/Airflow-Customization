@@ -1,0 +1,48 @@
+# Airflow Ingress - INT01 (aligned with helm-charts/services/airflow-srv)
+#
+# Helm chart mapping:
+#   Service name : {{ app.name }}-srv-tcp  ->  airflow-srv-tcp
+#   Web UI port  : airflow-webserver-port / 1031  (.values-airflow.yaml)
+#   Selector     : app=airflow
+#
+# Preferred deploy (GitOps / Helm):
+#   helm upgrade --install airflow-srv ./helm-charts/services/airflow-srv \
+#     -n int01-k8s \
+#     -f helm-charts/services/airflow-srv/.values-airflow.yaml \
+#     -f helm-charts/services/airflow-srv/custom/override-values.yaml
+#
+# Standalone apply (must match templates/ingress.yaml when ingress.enabled=true):
+#   kubectl apply -f airflow-ingress.yaml
+#
+# Prerequisites:
+#   kubectl create secret tls airflow-tls --cert=Airflowfullchain.pem --key=airflow.key -n int01-k8s
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: airflow-ingress
+  namespace: int01-k8s
+  labels:
+    app: airflow
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "false"
+    external-dns.alpha.kubernetes.io/hostname: airflow.int.corp.amdocs.azr
+spec:
+  tls:
+    - hosts:
+        - airflow.int.corp.amdocs.azr
+      secretName: airflow-tls
+  rules:
+    - host: airflow.int.corp.amdocs.azr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: airflow-srv-tcp
+                port:
+                  number: 1031

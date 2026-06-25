@@ -1,0 +1,58 @@
+acd_variables:
+  RETRIES_NUM: 0
+  add_host_aliases: "Y"
+  AIRFLOW_WEBSERVER_CONFIG_CUSTOMIZATION: "True"
+
+env_variables:
+  shared_pbin_path: "/tc_nfs/prd/SHARED_PBIN"
+  apply_pf_from_shared_pbin: "Y"
+  AIRFLOW__CORE__AUTH_MANAGER: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
+  AIRFLOW__WEBSERVER__BASE_URL: "https://airflow.prod.corp.amdocs.azr"
+  AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: "True"
+  AIRFLOW__AMDOCS_OAUTH__AMDOCS_OAUTH_ENABLED: "True"
+
+hosts_aliases:
+- ip: 10.57.228.31
+  name: prod-01-bastion-vmss000001
+- ip: 10.57.228.24
+  name: prod-01-consul01-vmss000001
+- ip: 10.57.228.11
+  name: prod-01-consul02-vmss000001
+- ip: 10.57.228.17
+  name: prod-01-consul03-vmss000001
+- ip: 10.57.228.14
+  name: prod-01-master01-vmss000001
+- ip: 10.57.228.14
+  name: prod-01-master01
+- ip: 10.57.228.16
+  name: prod-01-tca3s01-vmss000001
+- ip: 10.57.228.27
+  name: prod-01-tccli01-vmss000001
+- ip: 10.57.228.34
+  name: prod-01-tcmas01-vmss000001
+- ip: 10.57.228.35
+  name: prod-01-tcmas02-vmss000001
+- ip: 10.57.228.42
+  name: prod-01-tcuh01-vmss000001
+- ip: 10.57.228.26
+  name: prod-01-tcuh02-vmss000001
+- ip: 10.57.228.15
+  name: prod-01-cdhmng01.prod.corp.amdocs.azr
+- ip: 10.57.228.21
+  name: prod-01-cdhmng02.prod.corp.amdocs.azr
+- ip: 10.57.228.25
+  name: prod-01-cdhmng03.prod.corp.amdocs.azr
+- ip: 10.57.228.12
+  name: prod-01-cdhdat01.prod.corp.amdocs.azr
+- ip: 10.57.228.19
+  name: prod-01-cdhdat02.prod.corp.amdocs.azr
+- ip: 10.57.228.18
+  name: prod-01-cdhdat03.prod.corp.amdocs.azr
+- ip: 10.57.228.23
+  name: prod-01-cdhdat04.prod.corp.amdocs.azr
+- ip: 10.57.228.22
+  name: prod-01-cdhdat05.prod.corp.amdocs.azr
+- ip: 10.57.228.20
+  name: prod-01-cdhdat06.prod.corp.amdocs.azr
+- ip: 10.57.228.30
+  name: prod-01-tcmon-vmss000001

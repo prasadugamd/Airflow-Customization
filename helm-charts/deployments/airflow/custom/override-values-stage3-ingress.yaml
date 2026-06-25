@@ -1,0 +1,11 @@
+# Stage 3 only — Ingress + TLS cutover. Local login. No Ping SSO yet.
+# Use with full override-values.yaml base or merge at deploy:
+#   -f custom/override-values.yaml -f custom/override-values-stage3-ingress.yaml
+# Stage 4: deploy full override-values.yaml (adds OAuth env vars).
+
+acd_variables:
+  AIRFLOW_WEBSERVER_CONFIG_CUSTOMIZATION: "False"
+
+env_variables:
+  AIRFLOW__WEBSERVER__BASE_URL: "https://airflow.prod.corp.amdocs.azr"
+  AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: "True"

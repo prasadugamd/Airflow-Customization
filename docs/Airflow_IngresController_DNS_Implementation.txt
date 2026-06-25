@@ -1,0 +1,296 @@
+================================================================================
+Ingress Controller DNS Implementation — PRODUCTION
+================================================================================
+Document:   Airflow_IngresController_DNS_Implementation.txt
+Purpose:    Enable external-dns to auto-create Ingress DNS records on PROD
+            (same platform fix applied on INT01 in May 2026)
+Reference:  Airflow_SVC_LB_INGRESS_CONTROLLER.txt (INT baseline)
+Owner:      Platform Team (ClusterRole, external-dns, ingress SVC annotation)
+             TC / Account DevOps (Airflow Helm ingress after platform is ready)
+Environment: prod-01-a1-prod-aks
+Jump host:   prod-01-tccli01-vmss000001
+================================================================================
+
+OVERVIEW
+--------
+DNS for Ingress hostnames is managed by the external-dns operator
+(ms360-azr-external-dns-wi in ms360-platform-crd). It watches Kubernetes
+resources and writes A/TXT records to Azure Private DNS.
+
+On INT this was fixed so external-dns watches Ingress objects (not only
+Services). PROD currently has --source=service ONLY — Ingress DNS records
+(e.g. airflow.prod.corp.amdocs.azr) will NOT be created until the platform
+changes below are applied.
+
+This change does NOT require application downtime. It only affects DNS
+automation; nginx ingress and running apps keep serving traffic.
+
+
+PROD vs INT — KEY VALUES
+------------------------
+| Item                    | INT01                         | PROD                          |
+|-------------------------|-------------------------------|-------------------------------|
+| AKS cluster             | int-01-a1-int-aks             | prod-01-a1-prod-aks           |
+| Private DNS zone        | int.corp.amdocs.azr           | prod.corp.amdocs.azr          |
+| Ingress LB IP           | 10.57.234.10                  | 10.57.230.141                 |
+| external-dns owner      | int-01-a1-int-aks             | prod-01-a1-prod-aks           |
+| Ingress SVC annotation  | int.corp.amdocs.azr           | prod.corp.amdocs.azr          |
+| Airflow target FQDN     | airflow.int.corp.amdocs.azr   | airflow.prod.corp.amdocs.azr  |
+| Airflow namespace       | int01-k8s                     | prod01-k8s (confirm)          |
+| Airflow node pool       | int1tc                        | prd1tc                        |
+
+
+ARCHITECTURE (PROD)
+-------------------
+                    ms360-platform-crd
+                    ingress-nginx-controller (10.57.230.141)
+                              ^
+              +---------------+---------------+
+              |                               |
+    Ingress (prod01-tcms)             Ingress (prod01-k8s)  <- Airflow here
+    amdocs-generic-ingress            airflow-ingress (Helm)
+              |                               |
+    amd-apigw-stack-service         airflow-srv-tcp (ClusterIP when ingress on)
+    asm-services-cloud-service
+
+Flow after platform fix:
+  1. Airflow Ingress created (host: airflow.prod.corp.amdocs.azr)
+  2. nginx sets status.loadBalancer.ingress.ip = 10.57.230.141
+  3. external-dns (--source=ingress --ingress-class=nginx)
+       creates A record: airflow.prod.corp.amdocs.azr -> 10.57.230.141
+       in Azure Private DNS zone prod.corp.amdocs.azr
+
+
+PRE-REQUISITES — VERIFY CURRENT PROD STATE
+------------------------------------------
+Run on prod-01-tccli01-vmss000001 before changes:
+
+# 1. Ingress controller running and has LB IP
+kubectl get svc ingress-nginx-controller -n ms360-platform-crd \
+  -o wide
+
+# Expected: EXTERNAL-IP or LoadBalancer IP = 10.57.230.141
+
+# 2. external-dns current args (PROD gap — likely missing ingress source)
+kubectl get deploy ms360-azr-external-dns-wi -n ms360-platform-crd \
+  -o jsonpath='{.spec.template.spec.containers[0].args}' | tr ',' '\n'
+
+# Expected BEFORE fix: contains --source=service but NOT --source=ingress
+
+# 3. ClusterRole — check if ingresses rule exists
+kubectl get clusterrole ms360-azr-external-dns-wi -o yaml | grep -A6 ingresses
+
+# 4. Ingress SVC annotation (prod zone)
+kubectl get svc ingress-nginx-controller -n ms360-platform-crd \
+  -o jsonpath='{.metadata.annotations.external-dns\.alpha\.kubernetes\.io/hostname}{"\n"}'
+
+# Expected AFTER fix: prod.corp.amdocs.azr
+
+
+PLATFORM CHANGES (PFB — Please Fix Before Airflow Ingress)
+------------------------------------------------------------
+Mirror INT01 changes. Apply on prod-01-a1-prod-aks.
+
+--- Step 1: ClusterRole — allow external-dns to watch Ingress ---
+
+kubectl edit clusterrole ms360-azr-external-dns-wi
+
+Add under rules (if not already present):
+
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - watch
+
+Verify:
+kubectl get clusterrole ms360-azr-external-dns-wi -o yaml | grep -A6 ingresses
+
+
+--- Step 2: external-dns deployment — add ingress source ---
+
+kubectl edit deploy ms360-azr-external-dns-wi -n ms360-platform-crd
+
+In container args, ensure BOTH sources exist (keep existing --source=service):
+
+- --source=service
+- --source=ingress
+- --ingress-class=nginx
+
+Example args fragment:
+  - --source=service
+  - --source=ingress
+  - --ingress-class=nginx
+  - --provider=azure-private-dns
+  - --registry=txt
+  - --txt-owner-id=prod-01-a1-prod-aks
+  ... (other existing args unchanged)
+
+Note: Default Helm chart (ms360-azr-external-dns-wi-values.yaml) only lists
+      sources: [service]. PROD needs the kubectl edit OR Bitbucket/GitOps update.
+
+
+--- Step 3: Ingress controller Service — prod DNS zone annotation ---
+
+kubectl edit svc ingress-nginx-controller -n ms360-platform-crd
+
+Set annotation (PROD zone — not int.corp.amdocs.azr):
+
+  external-dns.alpha.kubernetes.io/hostname: 'prod.corp.amdocs.azr'
+
+This creates/updates apex A record @ in zone prod.corp.amdocs.azr -> 10.57.230.141
+
+
+--- Step 4: Restart external-dns pods ---
+
+kubectl rollout restart deploy/ms360-azr-external-dns-wi -n ms360-platform-crd
+kubectl rollout status deploy/ms360-azr-external-dns-wi -n ms360-platform-crd
+
+Downtime: NONE for apps. Brief pause (~30-60s) in DNS sync only.
+
+
+POST-CHANGE VALIDATION (Platform)
+---------------------------------
+# 1. external-dns logs — no "zone not found" for prod zone
+kubectl logs -n ms360-platform-crd deploy/ms360-azr-external-dns-wi --tail=50
+
+Expected GOOD log lines (pattern from INT):
+  Updating A record named '@' to '10.57.230.141' for Azure Private DNS zone 'prod.corp.amdocs.azr'.
+  Updating TXT record named '@' to '"heritage=external-dns,external-dns/owner=prod-01-a1-prod-aks,...'
+
+Expected BAD (fix zone/annotation if seen):
+  Ignoring changes to '...' because a suitable Azure Private DNS zone was not found.
+
+# 2. Apex DNS resolves
+nslookup prod.corp.amdocs.azr
+# Address: 10.57.230.141
+
+# 3. Existing apigw hostname still resolves (if already deployed on prod)
+nslookup amd-apigw-stack-service.prod01-tcms.prod.corp.amdocs.azr
+# Address: 10.57.230.141  (confirm prod TCMS namespace if different)
+
+
+AIRFLOW STEPS (after platform validation — TC / Account DevOps)
+---------------------------------------------------------------
+Platform must complete Steps 1-4 BEFORE Airflow Ingress Helm deploy.
+
+1. Create TLS secret in prod01-k8s (confirm namespace):
+   kubectl create secret tls airflow-tls \
+     --cert=Airflowfullchain.pem \
+     --key=airflow.key \
+     -n prod01-k8s \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   Certificate SAN must include: airflow.prod.corp.amdocs.azr
+
+2. Deploy airflow-srv Helm with ingress enabled (prod override-values):
+   - ingress.enabled: true
+   - host: airflow.prod.corp.amdocs.azr
+   - secretName: airflow-tls
+   - service.tcpports.type: ClusterIP
+   - annotation: external-dns.alpha.kubernetes.io/hostname: airflow.prod.corp.amdocs.azr
+   - backend-protocol: HTTPS, port 1031
+
+3. Verify Ingress:
+   kubectl get ingress airflow-ingress -n prod01-k8s
+   # ADDRESS: 10.57.230.141
+
+4. Verify DNS auto-created:
+   kubectl logs -n ms360-platform-crd deploy/ms360-azr-external-dns-wi --tail=30 | grep -i airflow
+   nslookup airflow.prod.corp.amdocs.azr
+   # Address: 10.57.230.141
+
+5. Verify HTTPS:
+   curl -vk https://airflow.prod.corp.amdocs.azr/health
+
+6. Set Airflow base URL (Helm env — survives pod restart):
+   AIRFLOW__WEBSERVER__BASE_URL: "https://airflow.prod.corp.amdocs.azr"
+   AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: "True"
+   (Do NOT enable OAuth env vars until Stage 4 — Ping SSO)
+
+7. Cutover (Stage 3 — user-facing URL change):
+   Retire old LoadBalancer / Citrix :1031 only after HTTPS validation.
+   Users access https://airflow.prod.corp.amdocs.azr with LOCAL login until Stage 4.
+
+STAGE 4 — Ping SSO (separate approval / window — after Stage 3 stable)
+-----------------------------------------------------------------------
+Prerequisites: Stage 3 HTTPS working from VDI; OIDC firewall approved.
+
+1. Network: NVA rule 10.57.229.0/24 → moria.a1.group (10.89.169.241:443)
+2. SSO: Ping client for https://airflow.prod.corp.amdocs.azr/oauth-authorized/ping
+3. NFS: /tc_nfs/prd/SHARED_PBIN/app/Op9_webserver_config.py (moria.a1.group, PROD groups)
+4. Helm airflow: AIRFLOW__AMDOCS_OAUTH__AMDOCS_OAUTH_ENABLED=True (+ FabAuthManager)
+5. Validate: Sign in with ping from VDI; RBAC groups
+
+See Airflow_Ping_Firewall_Request_PROD.md for Request 3 (OIDC egress).
+
+
+GITOPS / BITBUCKET (Platform follow-up)
+---------------------------------------
+Persist INT parity in source control (same owners as INT fix):
+
+1. ms360-azr-external-dns-wi-values.yaml — add ingress to sources + extraArgs
+2. ClusterRole template — ingresses get/list/watch
+3. ingress-nginx Service values — prod.corp.amdocs.azr hostname annotation
+
+Contact: Platform / Prafull / Ido (per INT rollout notes)
+
+
+TROUBLESHOOTING
+---------------
+| Symptom                              | Likely cause                          | Fix                          |
+|--------------------------------------|---------------------------------------|------------------------------|
+| "zone not found" in external-dns log | Wrong hostname annotation (INT zone)  | Use prod.corp.amdocs.azr     |
+| Ingress has no ADDRESS               | nginx controller not ready            | kubectl get po -n ms360-platform-crd |
+| DNS not created for Airflow          | --source=ingress missing              | Step 2 + restart             |
+| DNS not created for Airflow          | ClusterRole missing ingresses         | Step 1                       |
+| 502 Bad Gateway                      | backend HTTP vs HTTPS mismatch        | backend-protocol: HTTPS      |
+| Cert error in browser                | SAN mismatch                          | Re-issue cert for prod FQDN  |
+
+
+REFERENCE — INT IMPLEMENTATION (completed May 2026)
+---------------------------------------------------
+INT changes (for comparison):
+
+1. ClusterRole ms360-azr-external-dns-wi — ingresses get/list/watch
+2. external-dns args: --source=ingress, --ingress-class=nginx
+3. ingress-nginx-controller SVC annotation: int.corp.amdocs.azr
+4. Restart external-dns
+
+INT logs (success):
+  Updating A record named '@' to '10.57.234.10' for Azure Private DNS zone 'int.corp.amdocs.azr'.
+
+INT validation:
+  nslookup amd-apigw-stack-service.int01-tcms.int.corp.amdocs.azr -> 10.57.234.10
+  nslookup airflow.int.corp.amdocs.azr -> 10.57.234.10
+
+
+CHECKLIST
+---------
+Platform (prod-01-a1-prod-aks):
+  [ ] Step 1 — ClusterRole ingresses rule
+  [ ] Step 2 — external-dns --source=ingress + --ingress-class=nginx
+  [ ] Step 3 — ingress SVC annotation prod.corp.amdocs.azr
+  [ ] Step 4 — Restart external-dns; rollout status OK
+  [ ] Logs: apex @ -> 10.57.230.141, no "zone not found"
+  [ ] nslookup prod.corp.amdocs.azr -> 10.57.230.141
+  [ ] Bitbucket / GitOps update
+
+Airflow Stage 3 — Ingress + TLS (cutover):
+  [ ] airflow-tls secret (SAN: airflow.prod.corp.amdocs.azr)
+  [ ] airflow-srv Helm ingress deploy (OAuth env NOT enabled yet)
+  [ ] airflow Helm BASE_URL + ENABLE_PROXY_FIX only
+  [ ] nslookup airflow.prod.corp.amdocs.azr -> 10.57.230.141
+  [ ] curl https://airflow.prod.corp.amdocs.azr/health
+  [ ] VDI local login works
+  [ ] User comms: new URL; retire old :1031 / LB
+
+Airflow Stage 4 — Ping SSO (after Stage 3 stable):
+  [ ] OIDC firewall 10.57.229.0/24 -> 10.89.169.241
+  [ ] Ping client + PROD redirect URI (SSO / Nenad)
+  [ ] Op9_webserver_config.py on /tc_nfs/prd
+  [ ] OAuth env vars in airflow Helm
+  [ ] Sign in with ping + RBAC from VDI

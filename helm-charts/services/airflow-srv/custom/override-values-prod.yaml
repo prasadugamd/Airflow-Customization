@@ -1,0 +1,21 @@
+acd_variables:
+  work_with_external_ips: "N"
+  work_with_metallb: "N"
+
+# PROD01: nginx ingress (ms360-platform-crd) + customer cert SAN airflow.prod.corp.amdocs.azr
+ingress:
+  enabled: true
+  host: airflow.prod.corp.amdocs.azr
+  tls:
+    secretName: airflow-tls
+
+service:
+  tcpports:
+    type: ClusterIP
+
+service_annotations:
+  global:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    service.beta.kubernetes.io/azure-load-balancer-internal-subnet: "snet-at-a1g-Billing-PROD-we-001-Access"
+  tcp:
+  udp:

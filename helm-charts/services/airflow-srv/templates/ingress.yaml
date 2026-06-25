@@ -1,0 +1,32 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.ingress.name }}
+  labels:
+    app: {{ .Values.app.name }}
+    app.kubernetes.io/managed-by: Helm
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path }}
+            pathType: {{ .Values.ingress.pathType }}
+            backend:
+              service:
+                name: {{ .Values.app.name }}-srv-tcp
+                port:
+                  {{- /* Ingress API limits port.name to 15 chars; Service may use longer names (e.g. airflow-webserver-port). */}}
+                  number: {{ .Values.ingress.backendPortNumber | default .Values.ports.airflow_webserver_port }}
+{{- end }}

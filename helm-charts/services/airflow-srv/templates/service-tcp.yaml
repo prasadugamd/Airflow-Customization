@@ -1,0 +1,48 @@
+{{- $has_tcpports := false }}
+{{- if and (hasKey .Values.service "tcpports") (hasKey .Values.service.tcpports "ports") }}
+{{- $has_tcpports = ternary true false (gt (len (.Values.service.tcpports.ports | default "")) 0 ) }}
+{{- end }}
+{{- $has_cust_tcpports := ternary true false (gt (len (.Values.service.custom_tcpports | default "")) 0 ) }}
+{{- if or $has_tcpports $has_cust_tcpports }}
+{{- $work_with_external_ips := .Values.acd_variables.work_with_external_ips | default "N" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.app.name }}-srv-tcp
+  labels:
+     app: {{ .Values.app.name }}
+     monitored: prometheus
+{{- if and (eq .Values.service.tcpports.type "LoadBalancer") (eq $work_with_external_ips "N") }}
+  annotations:
+{{- if .Values.service_annotations.global }}
+{{ toYaml .Values.service_annotations.global | indent 4 }}
+{{- end }}
+
+{{- if .Values.service_annotations.tcp }}
+{{ toYaml .Values.service_annotations.tcp | indent 4 }}
+{{- end }}
+
+{{- end }}
+spec:
+  type: {{ if .Values.ingress.enabled }}ClusterIP{{ else }}{{ .Values.service.tcpports.type }}{{ end }}
+  ports:
+{{- if $has_tcpports }}
+{{ toYaml .Values.service.tcpports.ports | indent 2 }}
+{{- end}}
+{{- if $has_cust_tcpports }}
+{{ toYaml .Values.service.custom_tcpports.ports | indent 2 }}
+{{- end}}
+  selector:
+    app: {{ .Values.app.name }}
+{{- if ne .Values.service.tcpports.type "ClusterIP" }}
+{{- if .Values.acd_service_variables.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.acd_service_variables.externalTrafficPolicy }}
+  {{- end }}
+  {{- if eq $work_with_external_ips "Y" }}
+  externalIPs:
+  {{- range $value := .Values.acd_service_variables.externalips }}
+   - "{{ $value }}"
+  {{- end }}
+  {{- end }}
+{{- end }} {{- /* condition on clusterIP */ -}}
+{{- end }} {{- /* .Values.service.tcpports */ -}}
