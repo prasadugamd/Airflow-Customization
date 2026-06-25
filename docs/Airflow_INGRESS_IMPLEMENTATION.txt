@@ -1,0 +1,642 @@
+Helm chart reference: helm-charts/services/airflow-srv
+  - templates/service-tcp.yaml  -> Service airflow-srv-tcp (app.name=airflow)
+  - templates/ingress.yaml      -> Ingress (when ingress.enabled=true)
+  - .values-airflow.yaml        -> ports 1031/1035/21180, port name airflow-webserver-port
+  - custom/override-values.yaml -> INT: ingress.enabled, host, ClusterIP
+
+Step1 - Create airflow-tls TLS secret in int01-k8s (DONE)
+
+  cat airflow.cer AirflowInter.cer > Airflowfullchain.pem
+  kubectl create secret tls airflow-tls \
+    --cert=Airflowfullchain.pem --key=airflow.key -n int01-k8s \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+Step2 - Deploy Ingress (choose one)
+
+  Option A - Helm (recommended, matches chart):
+    helm upgrade --install airflow-srv ./helm-charts/services/airflow-srv \
+      -n int01-k8s \
+      -f ./helm-charts/services/airflow-srv/.values-airflow.yaml \
+      -f ./helm-charts/services/airflow-srv/custom/override-values.yaml
+
+    Preview manifest:
+    helm template airflow-srv ./helm-charts/services/airflow-srv \
+      -n int01-k8s \
+      -f ./helm-charts/services/airflow-srv/.values-airflow.yaml \
+      -f ./helm-charts/services/airflow-srv/custom/override-values.yaml
+
+  Option B - Standalone YAML (already applied / one-off):
+    kubectl apply -f airflow-ingress.yaml
+
+  Helm / Ingress backend mapping:
+    Service : airflow-srv-tcp          (from app.name + -srv-tcp)
+    Port    : number 1031 (Ingress cannot use port name airflow-webserver-port - K8s 15 char limit)
+    Host    : airflow.int.corp.amdocs.azr
+    TLS     : secret airflow-tls
+
+Step3 - Confirm Ingress ADDRESS = 10.57.234.10
+
+kubectl get ingress airflow-ingress -n int01-k8s
+kubectl describe ingress airflow-ingress -n int01-k8s
+
+Step4 - DNS and HTTPS
+
+kubectl logs -n ms360-platform-crd deploy/ms360-azr-external-dns-wi --tail=30 | grep -i airflow
+nslookup airflow.int.corp.amdocs.azr
+  curl -vk https://airflow.int.corp.amdocs.azr/health
+
+Step5 - Cutover
+
+  AIRFLOW_WEBSERVER=https://airflow.int.corp.amdocs.azr
+  After validation, service type ClusterIP (Helm override-values.yaml) or:
+  kubectl patch svc airflow-srv-tcp -n int01-k8s -p '{"spec":{"type":"ClusterIP"}}'
+
+
+
+
+
+
+admin@int-01-tccli01-vmss000000!M3G:admin> helm upgrade --install airflow-srv ./helm-charts/services/airflow-srv \
+>   -n int01-k8s \
+>   -f ./helm-charts/services/airflow-srv/.values-airflow.yaml \
+>   -f ./helm-charts/services/airflow-srv/custom/override-values.yaml
+I0520 05:31:51.603039 1732095 warnings.go:110] "Warning: annotation \"kubernetes.io/ingress.class\" is deprecated, please use 'spec.ingressClassName' instead"
+Release "airflow-srv" has been upgraded. Happy Helming!
+NAME: airflow-srv
+LAST DEPLOYED: Wed May 20 05:31:51 2026
+NAMESPACE: int01-k8s
+STATUS: deployed
+REVISION: 12
+TEST SUITE: None
+
+admin@int-01-tccli01-vmss000000!M3G:admin> helm history airflow-srv -n int01-k8s
+REVISION        UPDATED                         STATUS          CHART                   APP VERSION     DESCRIPTION                                                                                                                                                                                 
+3               Fri Apr 24 12:17:56 2026        superseded      airflow-srv-0.1.0       1.0             Upgrade complete                                                                                                                                                                            
+4               Tue Apr 28 14:15:26 2026        superseded      airflow-srv-0.1.0       1.0             Upgrade complete                                                                                                                                                                            
+5               Tue Apr 28 17:56:26 2026        superseded      airflow-srv-0.1.0       1.0             Upgrade complete                                                                                                                                                                            
+6               Tue Apr 28 17:59:41 2026        superseded      airflow-srv-0.1.0       1.0             Upgrade complete                                                                                                                                                                            
+7               Wed May  6 11:22:52 2026        superseded      airflow-srv-0.1.0       1.0             Upgrade complete                                                                                                                                                                            
+8               Fri May 15 16:04:25 2026        superseded      airflow-srv-0.1.0       1.0             Upgrade complete                                                                                                                                                                            
+9               Mon May 18 07:18:21 2026        superseded      airflow-srv-0.1.0       1.0             Upgrade complete                                                                                                                                                                            
+10              Mon May 18 11:47:31 2026        superseded      airflow-srv-0.1.0       1.0             Upgrade complete                                                                                                                                                                            
+11              Wed May 20 05:24:36 2026        failed          airflow-srv-0.1.0       1.0             Upgrade "airflow-srv" failed: failed to create resource: Ingress.networking.k8s.io "airflow-ingress" is invalid: spec.rules[0].http.paths[0].backend.service.port.name: Invalid value: "airflow-webserver-port": must be no more than 15 characters
+12              Wed May 20 05:31:51 2026        deployed        airflow-srv-0.1.0       1.0             Upgrade complete
+
+admin@int-01-tccli01-vmss000000!M3G:admin> kubectl get ingress airflow-ingress -n int01-k8s
+NAME              CLASS    HOSTS                         ADDRESS        PORTS     AGE
+airflow-ingress   <none>   airflow.int.corp.amdocs.azr   10.57.234.10   80, 443   106s
+admin@int-01-tccli01-vmss000000!M3G:admin> kubectl get svc airflow-srv-tcp -n int01-k8s
+NAME              TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                       AGE
+airflow-srv-tcp   ClusterIP   192.168.224.98   <none>        1031/TCP,1035/TCP,21180/TCP   82d
+admin@int-01-tccli01-vmss000000!M3G:admin> nslookup airflow.int.corp.amdocs.azr
+Server:         10.56.8.196
+Address:        10.56.8.196#53
+
+Non-authoritative answer:
+Name:   airflow.int.corp.amdocs.azr
+Address: 10.57.234.10
+
+admin@int-01-tccli01-vmss000000!M3G:admin> curl -vk https://airflow.int.corp.amdocs.azr/health
+*   Trying 10.57.234.10...
+* TCP_NODELAY set
+* Connected to airflow.int.corp.amdocs.azr (10.57.234.10) port 443 (#0)
+* ALPN, offering h2
+* ALPN, offering http/1.1
+* successfully set certificate verify locations:
+*   CAfile: /etc/pki/tls/certs/ca-bundle.crt
+  CApath: none
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.3 (IN), TLS handshake, [no content] (0):
+* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):
+* TLSv1.3 (IN), TLS handshake, [no content] (0):
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+* TLSv1.3 (IN), TLS handshake, [no content] (0):
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+* TLSv1.3 (IN), TLS handshake, [no content] (0):
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+* TLSv1.3 (OUT), TLS handshake, [no content] (0):
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384
+* ALPN, server accepted to use h2
+* Server certificate:
+*  subject: C=US; ST=Illinois; L=Chicago; O=Amdocs; OU=Infra Security; CN=airflow.int.corp.amdocs.azr
+*  start date: Apr 28 06:24:43 2026 GMT
+*  expire date: Apr 27 06:24:43 2028 GMT
+*  issuer: C=AT; ST=Vienna; L=Vienna; O=Telekom Austria AG; OU=Certification Services Division; CN=A1-Telekom-Austria-AG-IssuingCA01-Silver; emailAddress=pki@a1.group
+*  SSL certificate verify result: unable to get local issuer certificate (20), continuing anyway.
+* Using HTTP2, server supports multi-use
+* Connection state changed (HTTP/2 confirmed)
+* Copying HTTP/2 data in stream buffer to connection buffer after upgrade: len=0
+* TLSv1.3 (OUT), TLS app data, [no content] (0):
+* TLSv1.3 (OUT), TLS app data, [no content] (0):
+* TLSv1.3 (OUT), TLS app data, [no content] (0):
+* Using Stream ID: 1 (easy handle 0x55a6eb49c6b0)
+* TLSv1.3 (OUT), TLS app data, [no content] (0):
+> GET /health HTTP/2
+> Host: airflow.int.corp.amdocs.azr
+> User-Agent: curl/7.61.1
+> Accept: */*
+>
+* TLSv1.3 (IN), TLS handshake, [no content] (0):
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* TLSv1.3 (IN), TLS handshake, [no content] (0):
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* TLSv1.3 (IN), TLS app data, [no content] (0):
+* Connection state changed (MAX_CONCURRENT_STREAMS == 128)!
+* TLSv1.3 (OUT), TLS app data, [no content] (0):
+* TLSv1.3 (IN), TLS app data, [no content] (0):
+< HTTP/2 502
+< date: Wed, 20 May 2026 03:33:05 GMT
+< content-type: text/html
+< content-length: 150
+< strict-transport-security: max-age=31536000; includeSubDomains
+<
+<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+* Connection #0 to host airflow.int.corp.amdocs.azr left intact
+admin@int-01-tccli01-vmss000000!M3G:admin>
+
+admin@int-01-tccli01-vmss000000!M3G:admin> kubectl get endpoints airflow-srv-tcp -n int01-k8s -o wide
+NAME              ENDPOINTS                                                AGE
+airflow-srv-tcp   172.18.45.87:21180,172.18.45.87:1035,172.18.45.87:1031   82d
+admin@int-01-tccli01-vmss000000!M3G:admin> kubectl get pods -n int01-k8s -l app=airflow
+NAME                      READY   STATUS    RESTARTS         AGE
+airflow-d5db54755-cqxjl   2/2     Running   158 (5m9s ago)   39h
+admin@int-01-tccli01-vmss000000!M3G:admin> .name}{"\t"}{.spec.containers[*].ports}{"\n"}{end}'                                                 <
+airflow-d5db54755-cqxjl
+admin@int-01-tccli01-vmss000000!M3G:admin> kubectl run curl-test --rm -it --restart=Never -n int01-k8s --image=curlimages/curl -- \
+>   curl -sv http://airflow-srv-tcp.int01-k8s.svc.cluster.local:1031/health
+* Host airflow-srv-tcp.int01-k8s.svc.cluster.local:1031 was resolved.
+* IPv6: (none)
+* IPv4: 192.168.224.98
+*   Trying 192.168.224.98:1031...
+* Established connection to airflow-srv-tcp.int01-k8s.svc.cluster.local (192.168.224.98 port 1031) from 172.18.58.40 port 41264
+* using HTTP/1.x
+> GET /health HTTP/1.1
+> Host: airflow-srv-tcp.int01-k8s.svc.cluster.local:1031
+> User-Agent: curl/8.20.0
+> Accept: */*
+>
+* Request completely sent off
+* Recv failure: Connection reset by peer
+* closing connection #0
+pod "curl-test" deleted
+pod int01-k8s/curl-test terminated (Error)
+admin@int-01-tccli01-vmss000000!M3G:admin> kubectl run curl-test2 --rm -it --restart=Never -n int01-k8s --image=curlimages/curl -- \
+>   curl -sv http://airflow-srv-tcp.int01-k8s.svc.cluster.local:1031/
+* Host airflow-srv-tcp.int01-k8s.svc.cluster.local:1031 was resolved.
+* IPv6: (none)
+* IPv4: 192.168.224.98
+*   Trying 192.168.224.98:1031...
+* Established connection to airflow-srv-tcp.int01-k8s.svc.cluster.local (192.168.224.98 port 1031) from 172.18.58.42 port 38322
+* using HTTP/1.x
+> GET / HTTP/1.1
+> Host: airflow-srv-tcp.int01-k8s.svc.cluster.local:1031
+> User-Agent: curl/8.20.0
+> Accept: */*
+>
+* Request completely sent off
+* Recv failure: Connection reset by peer
+* closing connection #0
+pod "curl-test2" deleted
+pod int01-k8s/curl-test2 terminated (Error)
+admin@int-01-tccli01-vmss000000!M3G:admin>
+
+
+
+TC / CLI env
+AIRFLOW_WEBSERVER=https://airflow.int.corp.amdocs.azr
+SAML / Entra / Ping — redirect/ACS URLs on https://airflow.int.corp.amdocs.azr (no IP, no :1031).
+Network — allow 443 to 10.57.234.10; retire 10.57.234.50:1031 in Citrix/firewall.
+Trust store (optional) — unable to get local issuer certificate on CLI is missing A1 intermediate in ca-bundle; import AirflowInter.cer (or corporate bundle) on clients/TC if strict verification is required. Browsers on corp VDI often already trust it.
+Git — commit helm changes (ingress.yaml, backend-protocol: HTTPS, port.number: 1031, override-values.yaml).
+Commit implementation — merge Airflow_INGRESS_IMPLEMENTATION.txt steps to your runbook.
+
+Rollback reference
+Revision	State
+13
+Ingress + HTTPS backend (current)
+12
+Ingress + HTTP backend (502)
+10
+LoadBalancer 10.57.234.50
+
+helm rollback airflow-srv 10 -n int01-k8s   # full revert to LB only
+
+
+
+Email summary — Airflow HTTPS ingress (INT01)
+Subject: INT01 Airflow — Ingress HTTPS enabled (airflow.int.corp.amdocs.azr)
+
+Overview
+Airflow UI on INT01 is now exposed via the shared nginx ingress controller with a customer-signed TLS certificate, replacing the previous dedicated Azure internal LoadBalancer (10.57.234.50:1031). The UI is accessible, and local authentication has been verified.
+
+Previous state
+
+Service: airflow-srv-tcp (namespace int01-k8s) — type LoadBalancer
+URL: https://10.57.234.50:1031
+No DNS hostname; certificate not aligned with a stable FQDN for SSO
+Target / current state
+
+URL: https://airflow.int.corp.amdocs.azr (port 443, no :1031)
+DNS: airflow.int.corp.amdocs.azr → 10.57.234.10 (nginx ingress, ms360-platform-crd)
+TLS: Customer certificate (SAN: airflow.int.corp.amdocs.azr) in secret airflow-tls
+Service: airflow-srv-tcp — type ClusterIP (LB IP removed)
+Helm release: airflow-srv revision 13 (namespace int01-k8s)
+Technical changes
+
+TLS secret — Created airflow-tls from customer certs (airflow.cer + AirflowInter.cer → chain, airflow.key).
+Helm chart (airflow-srv)
+Added templates/ingress.yaml
+Enabled ingress in custom/override-values.yaml (host: airflow.int.corp.amdocs.azr)
+Service switches to ClusterIP when ingress is enabled
+Ingress backend: port 1031, backend-protocol: **HTTPS** (webserver listens HTTPS on 1031; HTTP caused 502)
+Ingress uses port.number: 1031 (K8s limit: port name ≤ 15 chars; airflow-webserver-port is invalid on Ingress)
+external-dns — A record airflow in zone int.corp.amdocs.azr → 10.57.234.10 (ingress source already configured on platform).
+Architecture
+
+User → https://airflow.int.corp.amdocs.azr:443
+     → nginx ingress (10.57.234.10, customer TLS)
+     → HTTPS → airflow-srv-tcp:1031 → Airflow pod
+Validation completed
+
+DNS resolves to ingress IP
+HTTPS presents correct certificate (CN/SAN: airflow.int.corp.amdocs.azr)
+UI loads (/home), local login successful
+helm history: revision 13 deployed
+Configuration to update
+
+AIRFLOW_WEBSERVER: https://airflow.int.corp.amdocs.azr (remove IP and :1031)
+Firewall / Citrix: Allow 443 to 10.57.234.10; retire 10.57.234.50:1031
+Future Entra ID / SAML: Register redirect/ACS URLs on https://airflow.int.corp.amdocs.azr/...
+Rollback (if required)
+
+helm rollback airflow-srv 10 -n int01-k8s (pre-ingress, LoadBalancer)
+Restore Service from backup airflow-srv-tcp-before.yaml if needed
+Artifacts / repo
+
+Helm: helm-charts/services/airflow-srv/ (ingress template, values, INT override)
+Runbook: Airflow_INGRESS_IMPLEMENTATION.txt
+Next steps
+
+Update TC/Jenkins/env configs to the new URL
+Commit/promote helm chart changes to Bitbucket
+Plan Entra ID SSO on the new FQDN
+Monitor Airflow pod stability (historical restarts observed)
+
+
+
+For SSO set up in airflow:  
+Note: Create the Op9_webserver_config.py file as per your requirement 
+1. Copy File Op9_webserver_config.py to /tc_nfs/<env>/SHARED_PBIN/app
+2. Helm update
+    2.1 on RT Host, update airflow helm charts
+                    Path - ~/helm-charts/deployments/airflow/custom/override-values.yaml
+                                Add/Update these params in respective sections as give below:
+                                env_variables:
+          apply_pf_from_shared_pbin: "Y"
+		  env_variables:
+  shared_pbin_path: "/tc_nfs/int01/SHARED_PBIN"
+  apply_pf_from_shared_pbin: "N"
+
+        acd_variables:
+          AIRFLOW_WEBSERVER_CONFIG_CUSTOMIZATION: "True"
+
+3. Restart airflow 
+I have tried it with Keycloak so share the Op1_webserver_config.py file for reference.
+
+Client secret: GAnwlMcAG7cl93viFPoRAx2tjGmYnqmdi0wQGi1vFfMA8h4b7sQMeyt8IcBnL0Gt
+0KhuvTXTP3JY4QFEdo6PrtSEIaMSyGE3V5Bh9uED8EfW1RwNouOBTzw8ro6gBpT5
+Client  ID: AdmocsAirflow
+URL: https://moria-t.a1.group
+
+Login URL: https://airflow.int.corp.amdocs.azr/login
+Logout URL: https://airflow.int.corp.amdocs.azr/logout
+Redirect URI: https://airflow.int.corp.amdocs.azr/oauth-authorized/ping
+
+
+
+helm list -n int01-k8s|grep airflow
+airflow                                 int01-k8s       1               2026-05-18 13:58:37.907149396 +0200 CEST        deployed        airflow-0.1.0                             1.0
+airflow-hpa                             int01-k8s       1               2026-02-26 18:13:41.030719488 +0000 UTC         deployed        hpa-0.1.0                                 1.0
+airflow-srv                             int01-k8s       13              2026-05-20 05:47:44.259834807 +0200 CEST        deployed        airflow-srv-0.1.0                         1.0
+oprest-srv                              int01-k8s       9               2026-05-18 11:47:31.179253221 +0200 CEST        deployed        airflow-srv-0.1.0                         1.0
+
+
+helm template airflow . -n int01-k8s \
+  -f .values-airflow.yaml -f custom/override-values.yaml \
+  | grep -E "AIRFLOW__|PING_CLIENT|amdocs_oauth|webserver_config|image:" | head -40
+  
+  
+echo "=== DNS ==="
+getent hosts moria-t.a1.group || echo "DNS FAIL"
+echo
+echo "=== Existing proxy env ==="
+env | grep -iE "proxy" || echo "no proxy env set"
+echo
+echo "=== TCP reachable on 443? ==="
+timeout 5 bash -c "</dev/tcp/moria-t.a1.group/443" && echo "TCP 443 OPEN" || echo "TCP 443 BLOCKED"
+echo
+echo "=== TLS handshake (skip verify) ==="
+curl -kv --max-time 10 https://moria-t.a1.group/.well-known/openid-configuration 2>&1 | sed -n "1,40p"
+echo
+echo "=== TLS handshake via openssl ==="
+echo | timeout 10 openssl s_client -connect moria-t.a1.group:443 -servername moria-t.a1.group 2>&1 | sed -n "1,40p"
+
+
+
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>echo "=== DNS ==="
+=== DNS ===
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>getent hosts moria-t.a1.group || echo "DNS FAIL"
+10.89.252.241   moria-t.a1.group
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>echo
+
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>echo "=== Existing proxy env ==="
+=== Existing proxy env ===
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>env | grep -iE "proxy" || echo "no proxy env set"
+AIRFLOW_USER_LIST=[{'userrole': 'Admin', 'username': 'admin', 'password': 'a1intpg!_admin', 'email': 'admin_user@amdocs.com', 'firstname': 'admin', 'lastname': 'admin', 'cli': 'Y'}, {'userrole': 'Op', 'username': 'airflow', 'password': 'airflow', 'email': 'op_user@amdocs.com', 'firstname': 'airflow', 'lastname': 'airflow', 'cli': 'N'}, {'userrole': 'User', 'username': 'user', 'password': 'user', 'email': 'user_user@amdocs.com', 'firstname': 'user', 'lastname': 'user', 'cli': 'N'}, {'userrole': 'Viewer', 'username': 'viewer', 'password': 'viewer', 'email': 'viewer_user@amdocs.com', 'firstname': 'viewer', 'lastname': 'viewer', 'cli': 'N'}, {'userrole': 'Op', 'username': 'airflow-op-proxy', 'password': 'airflow-op-proxy', 'email': 'airflow_op_proxy@amdocs.com', 'firstname': 'Op', 'lastname': 'Airflow', 'cli': 'N'}, {'userrole': 'User', 'username': 'airflow-user-proxy', 'password': 'airflow-user-proxy', 'email': 'airflow_user_proxy@amdocs.com', 'firstname': 'User', 'lastname': 'Airflow', 'cli': 'N'}, {'userrole': 'Admin', 'username': 'airflow-admin-proxy', 'password': 'airflow-admin-proxy', 'email': 'airflow_admin_proxy@amdocs.com', 'firstname': 'Admin', 'lastname': 'Airflow', 'cli': 'N'}, {'userrole': 'Viewer', 'username': 'airflow-viewer-proxy', 'password': 'airflow-viewer-proxy', 'email': 'airflow_viewer_proxy@amdocs.com', 'firstname': 'Viewer', 'lastname': 'Airflow', 'cli': 'N'}]
+AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX=True
+GEODECLUSTER_1_PROXY_PORT=tcp://192.168.58.81:4044
+GEODECLUSTER_1_PROXY_PORT_4044_TCP=tcp://192.168.58.81:4044
+GEODECLUSTER_1_PROXY_PORT_4044_TCP_ADDR=192.168.58.81
+GEODECLUSTER_1_PROXY_PORT_4044_TCP_PORT=4044
+GEODECLUSTER_1_PROXY_PORT_4044_TCP_PROTO=tcp
+GEODECLUSTER_1_PROXY_SERVICE_HOST=192.168.58.81
+GEODECLUSTER_1_PROXY_SERVICE_PORT=4044
+GEODECLUSTER_1_PROXY_SERVICE_PORT_PROXY_PORT=4044
+GEODECLUSTER_21_PROXY_PORT=tcp://192.168.193.27:4044
+GEODECLUSTER_21_PROXY_PORT_4044_TCP=tcp://192.168.193.27:4044
+GEODECLUSTER_21_PROXY_PORT_4044_TCP_ADDR=192.168.193.27
+GEODECLUSTER_21_PROXY_PORT_4044_TCP_PORT=4044
+GEODECLUSTER_21_PROXY_PORT_4044_TCP_PROTO=tcp
+GEODECLUSTER_21_PROXY_SERVICE_HOST=192.168.193.27
+GEODECLUSTER_21_PROXY_SERVICE_PORT=4044
+GEODECLUSTER_21_PROXY_SERVICE_PORT_PROXY_PORT=4044
+GEODECLUSTER_2_PROXY_PORT=tcp://192.168.14.156:4046
+GEODECLUSTER_2_PROXY_PORT_4046_TCP=tcp://192.168.14.156:4046
+GEODECLUSTER_2_PROXY_PORT_4046_TCP_ADDR=192.168.14.156
+GEODECLUSTER_2_PROXY_PORT_4046_TCP_PORT=4046
+GEODECLUSTER_2_PROXY_PORT_4046_TCP_PROTO=tcp
+GEODECLUSTER_2_PROXY_SERVICE_HOST=192.168.14.156
+GEODECLUSTER_2_PROXY_SERVICE_PORT=4046
+GEODECLUSTER_2_PROXY_SERVICE_PORT_PROXY_PORT=4046
+GEODECLUSTER_3_PROXY_PORT=tcp://192.168.212.8:4049
+GEODECLUSTER_3_PROXY_PORT_4049_TCP=tcp://192.168.212.8:4049
+GEODECLUSTER_3_PROXY_PORT_4049_TCP_ADDR=192.168.212.8
+GEODECLUSTER_3_PROXY_PORT_4049_TCP_PORT=4049
+GEODECLUSTER_3_PROXY_PORT_4049_TCP_PROTO=tcp
+GEODECLUSTER_3_PROXY_SERVICE_HOST=192.168.212.8
+GEODECLUSTER_3_PROXY_SERVICE_PORT=4049
+GEODECLUSTER_3_PROXY_SERVICE_PORT_PROXY_PORT=4049
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>echo
+
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>echo "=== TCP reachable on 443? ==="
+=== TCP reachable on 443? ===
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>&& echo "TCP 443 OPEN" || echo "TCP 443 BLOCKED"                                              <
+TCP 443 OPEN
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>echo
+
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>echo "=== TLS handshake (skip verify) ==="
+=== TLS handshake (skip verify) ===
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>known/openid-configuration 2>&1 | sed -n "1,40p"                                              <
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0*   Trying 10.89.252.241...
+* TCP_NODELAY set
+* Connected to moria-t.a1.group (10.89.252.241) port 443 (#0)
+* ALPN, offering h2
+* ALPN, offering http/1.1
+* successfully set certificate verify locations:
+*   CAfile: /etc/pki/tls/certs/ca-bundle.crt
+  CApath: none
+} [5 bytes data]
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+} [512 bytes data]
+* OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to moria-t.a1.group:443
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+* Closing connection 0
+curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to moria-t.a1.group:443
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>echo
+
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>echo "=== TLS handshake via openssl ==="
+=== TLS handshake via openssl ===
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>ervername moria-t.a1.group 2>&1 | sed -n "1,40p"                                              <
+write:errno=0
+CONNECTED(00000003)
+---
+no peer certificate available
+---
+No client certificate CA names sent
+---
+SSL handshake has read 0 bytes and written 314 bytes
+Verification: OK
+---
+New, (NONE), Cipher is (NONE)
+Secure Renegotiation IS NOT supported
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+Early data was not sent
+Verify return code: 0 (ok)
+---
+xpiwrk1@airflow-66d866b4d-xrdx5!M3G:home/xpiwrk1>
+
+
+GW_NS=int01-tcms
+GW_POD=$(
+kubectl get po -n int01-tcms -l app=amd-apigw-stack -o jsonpath='{.items[0].metadata.name}')
+echo "Testing from apigw pod: $GW_POD"
+kubectl exec -n $GW_NS $GW_POD -- bash -lc '
+echo | timeout 10 openssl s_client -connect moria-t.a1.group:443 -servername moria-t.a1.group 2>&1 | sed -n "1,25p"
+
+
+RG=rg_aks_rgintenv-01
+AKS=int-01-a1-int-aks
+
+# Node resource group (NSGs / LB for nodes live here)
+az aks show -g rg_aks_rgintenv-01 -n int-01-a1-int-aks --query nodeResourceGroup -o tsv
+
+# Outbound type + effective outbound IPs (SNAT source for pods)
+az aks show -g rg_aks_rgintenv-01 -n int-01-a1-int-aks \
+  --query "{outboundType:networkProfile.outboundType,loadBalancerProfile:networkProfile.loadBalancerProfile}" -o json
+
+# Managed outbound IPs (if loadBalancer outbound)
+az aks show -g rg_aks_rgintenv-01 -n int-01-a1-int-aks \
+  --query "networkProfile.loadBalancerProfile.effectiveOutboundIPs" -o json
+
+az aks show -g rg_aks_rgintenv-01 -n int-01-a1-int-aks --query nodeResourceGroup -o tsv
+
+RG=rg_aks_rgintenv-01
+AKS=int-01-a1-int-aks
+
+az aks show -g rg_aks_rgintenv-01 -n int-01-a1-int-aks \
+  --query "{vnetId:agentPoolProfiles[0].vnetSubnetId, pools:agentPoolProfiles[].{name:name,subnet:virtualMachinesProfile.vnetSubnetId}}" -o json
+az aks nodepool list -g rg_aks_rgintenv-01 --cluster-name int-01-a1-int-aks \
+  --query "[].{pool:name,subnet:vnetSubnetId}" -o table
+
+SUBNET_ID="/subscriptions/7fb9aee5-51f8-45bd-916f-053a11ec9fae/resourceGroups/rg-at-a1g-Billing-INT-we-network-001/providers/Microsoft.Network/virtualNetworks/vnet-at-a1g-Billing-INT-we-001/subnets/snet-at-a1g-Billing-INT-we-001-Worker"
+
+az network vnet subnet show --ids "/subscriptions/7fb9aee5-51f8-45bd-916f-053a11ec9fae/resourceGroups/rg-at-a1g-Billing-INT-we-network-001/providers/Microsoft.Network/virtualNetworks/vnet-at-a1g-Billing-INT-we-001/subnets/snet-at-a1g-Billing-INT-we-001-Worker" \
+  --query "{subnet:name,addressPrefix:addressPrefix,routeTable:routeTable.id,nsg:networkSecurityGroup.id}" -o json
+
+
+
+
+RT_RG=rg-at-a1g-Billing-INT-we-network-001
+RT_NAME=route-vnet-at-a1g-Billing-INT-we-001-worker
+
+az network route-table route list -g rg-at-a1g-Billing-INT-we-network-001 --route-table-name route-vnet-at-a1g-Billing-INT-we-001-worker -o table
+az network route-table route list -g rg-at-a1g-Billing-INT-we-network-001 --route-table-name route-vnet-at-a1g-Billing-INT-we-001-worker \
+  --query "[].{name:name,prefix:addressPrefix,nextHopType:nextHopType,nextHopIp:nextHopIpAddress}" -o table
+
+Ticket snippet (with your real names)
+
+Allow HTTPS from AKS Worker subnet to PingFederate (Airflow OIDC) — INT01
+
+Source subnet:  snet-at-a1g-Billing-INT-we-001-Worker (10.57.232.0/24)
+VNet:           vnet-at-a1g-Billing-INT-we-001
+Route table:    route-vnet-at-a1g-Billing-INT-we-001-worker
+NSG:            nsg-snet-at-a1g-Billing-INT-we-001-Worker
+AKS:            int-01-a1-int-aks, outboundType=userDefinedRouting
+Node pool:      int1tc (Airflow), namespace int01-k8s
+
+Destination:    moria-t.a1.group → 10.89.252.241:443
+
+Symptom:        TCP 443 OK; TLS handshake fails (SSL_ERROR_SYSCALL).
+
+Actions:
+  1) Review UDR route-vnet-at-a1g-Billing-INT-we-001-worker (0.0.0.0/0 next hop)
+     and allow HTTPS to 10.89.252.241 on that path.
+  2) Review NSG nsg-snet-at-a1g-Billing-INT-we-001-Worker outbound if needed.
+  3) SSO: confirm moria-t.a1.group + allow-list source SNAT IP from egress appliance.
+
+Verify:
+  curl -sk -w "%{http_code}\n" -o /dev/null \
+    https://moria-t.a1.group/.well-known/openid-configuration
+  → 200 from airflow pod
+
+After the change
+# From airflow pod
+curl -sk -o /dev/null -w "discovery: %{http_code}\n" \
+  https://moria-t.a1.group/.well-known/openid-configuration
+
+200 → try Sign in with ping again; “Invalid login” should disappear once the browser reaches Ping.
+
+
+
+
+
+Subject: Allow HTTPS from AKS INT Worker to PingFederate (10.89.252.241) via egress NVA 10.56.4.68
+
+Environment:
+  Subscription: at-a1g-Billing-INT
+  AKS: int-01-a1-int-aks (outboundType: userDefinedRouting)
+  Worker subnet: snet-at-a1g-Billing-INT-we-001-Worker (10.57.232.0/24)
+  Route table: route-vnet-at-a1g-Billing-INT-we-001-worker
+  Default route: 0.0.0.0/0 → VirtualAppliance 10.56.4.68 (default-route-internet)
+  Airflow node pool: int1tc (pod CIDR example 172.18.9.0/24 → node hop 10.57.232.29)
+  NSG: nsg-snet-at-a1g-Billing-INT-we-001-Worker
+
+Destination:
+  FQDN: moria-t.a1.group
+  IP:   10.89.252.241
+  Port: TCP 443 (OIDC: /.well-known/openid-configuration, token, userinfo)
+
+Symptom:
+  TCP 443 connects; TLS Client Hello sent; handshake fails SSL_ERROR_SYSCALL
+  (0 bytes read). Affects airflow pod, apigw pod, admin VM in INT01.
+
+Application:
+  Airflow https://airflow.int.corp.amdocs.azr
+  OIDC redirect: https://airflow.int.corp.amdocs.azr/oauth-authorized/ping
+  Client: AdmocsAirflow
+
+Request:
+  1) On egress appliance 10.56.4.68: allow HTTPS from sources above to 10.89.252.241
+     (and/or FQDN moria-t.a1.group).
+  2) Provide SNAT source IP seen by Ping for SSO allow-list.
+  3) SSO: confirm moria-t.a1.group is correct INT01 OIDC endpoint.
+
+Verify:
+  From airflow pod:
+  curl -sk -o /dev/null -w "%{http_code}\n" \
+    https://moria-t.a1.group/.well-known/openid-configuration
+  Expected: 200
+
+
+============Final context for Network Ticket=============
+
+Environment:
+  AKS int-01-a1-int-aks, Worker subnet 10.57.232.0/24, egress via UDR to NVA 10.56.4.68.
+  Airflow OIDC to moria-t.a1.group (10.89.252.241).
+
+Firewall rule request (on NVA 10.56.4.68):
+  Source:      10.57.232.0/24
+  Destination: 10.89.252.241
+  Service:     HTTPS (TCP 443)
+  Purpose:     Airflow PingFederate OIDC (discovery/token/userinfo)
+
+Also request:
+  SNAT IP used toward 10.89.252.241 for Ping allow-list (SSO team).
+  Confirm moria-t.a1.group is correct INT01 OIDC host.
+
+Verify:
+  curl -sk -w "%{http_code}\n" -o /dev/null \
+    https://moria-t.a1.group/.well-known/openid-configuration
+  → 200 from airflow pod
+
+
+================================================================================
+PRODUCTION — Helm ingress (prod-01-a1-prod-aks / prod01-k8s)
+================================================================================
+Chart paths:
+  PROD/prod-helm-charts/helm-charts/   (prod tree — primary for PROD deploy)
+  helm-charts/                         (shared templates + override-values-prod.yaml)
+
+PROD values:
+  FQDN        : airflow.prod.corp.amdocs.azr
+  Ingress IP  : 10.57.230.141
+  DNS zone    : prod.corp.amdocs.azr
+  NFS path    : /tc_nfs/prd/SHARED_PBIN
+  Namespace   : prod01-k8s
+  TLS secret  : airflow-tls (SAN must include airflow.prod.corp.amdocs.azr)
+
+Prerequisite: Platform external-dns --source=ingress (Airflow_IngresController_DNS_Implementation.txt)
+
+Step1 - Create airflow-tls in prod01-k8s
+  kubectl create secret tls airflow-tls \
+    --cert=Airflowfullchain.pem --key=airflow.key -n prod01-k8s \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+Step2 - Deploy airflow-srv (Ingress + ClusterIP)
+  helm upgrade --install airflow-srv ./PROD/prod-helm-charts/helm-charts/services/airflow-srv \
+    -n prod01-k8s \
+    -f ./PROD/prod-helm-charts/helm-charts/services/airflow-srv/.values-airflow.yaml \
+    -f ./PROD/prod-helm-charts/helm-charts/services/airflow-srv/custom/override-values.yaml
+
+Step3 - Deploy airflow (BASE_URL + OAuth env)
+  helm upgrade --install airflow ./PROD/prod-helm-charts/helm-charts/deployments/airflow \
+    -n prod01-k8s \
+    -f ./PROD/prod-helm-charts/helm-charts/global/custom/global-override-values.yaml \
+    -f ./PROD/prod-helm-charts/helm-charts/deployments/airflow/custom/override-values.yaml
+
+Step4 - Validate
+  kubectl get ingress airflow-ingress -n prod01-k8s
+  nslookup airflow.prod.corp.amdocs.azr          # -> 10.57.230.141
+  curl -vk https://airflow.prod.corp.amdocs.azr/health
+
+PROD helm changes (mirror INT):
+  services/airflow-srv/templates/ingress.yaml          (new)
+  services/airflow-srv/templates/service-tcp.yaml      (ClusterIP when ingress.enabled)
+  services/airflow-srv/.values-airflow.yaml            (ingress block, prod host)
+  services/airflow-srv/custom/override-values.yaml     (ingress.enabled, ClusterIP)
+  deployments/airflow/custom/override-values.yaml      (BASE_URL, OAuth env vars)
+
+Also update SHARED_PBIN Op9_webserver_config.py on /tc_nfs/prd for PROD Ping groups/redirect URI.
