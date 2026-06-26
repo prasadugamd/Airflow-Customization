@@ -18,13 +18,27 @@ DNS for Ingress hostnames is managed by the external-dns operator
 resources and writes A/TXT records to Azure Private DNS.
 
 On INT this was fixed so external-dns watches Ingress objects (not only
-Services). PROD currently has --source=service ONLY — Ingress DNS records
-(e.g. airflow.prod.corp.amdocs.azr) will NOT be created until the platform
-changes below are applied.
+Services). PROD was fixed 2026-06-26 to match INT (see VERIFIED STATE below).
 
 This change does NOT require application downtime. It only affects DNS
 automation; nginx ingress and running apps keep serving traffic.
 
+
+PROD vs INT — VERIFIED STATE (kubectl 2026-06-26)
+----------------------------------------------
+| Check | INT01 (OK) | PROD before fix | PROD after fix (2026-06-26) |
+|-------|------------|-----------------|------------------------------|
+| Ingress LB IP | 10.57.234.10 | 10.57.230.141 | 10.57.230.141 OK |
+| external-dns --source=service | yes | yes | yes OK |
+| external-dns --source=ingress | yes | NO | yes OK |
+| external-dns --ingress-class=nginx | yes | NO | yes OK |
+| ClusterRole ingresses | yes | NO | yes OK |
+| SVC hostname annotation | int.corp.amdocs.azr | *.prod-01-a1-prod-aks. | prod.corp.amdocs.azr OK |
+| nslookup apex zone | 10.57.234.10 | N/A | prod.corp.amdocs.azr -> 10.57.230.141 OK |
+| VDI DNS + firewall 443 | (INT) | pending | customer confirmed OK (Stage 2) |
+
+Harmless log (ignore): Ignoring changes to 'a-prod.corp.amdocs.azr' — no matching
+Private DNS zone (leftover from old annotation pattern).
 
 PROD vs INT — KEY VALUES
 ------------------------
@@ -87,24 +101,65 @@ kubectl get svc ingress-nginx-controller -n ms360-platform-crd \
 # Expected AFTER fix: prod.corp.amdocs.azr
 
 
+BACKUP BEFORE PLATFORM CHANGES (recommended — ~5 min)
+-----------------------------------------------------
+Export current K8s state on prod-01-tccli01 BEFORE any patch. Sufficient for
+rollback; full cluster backup NOT required.
+
+  BACKUP=~/platform-dns-backup-$(date +%Y%m%d-%H%M%S)
+  mkdir -p $BACKUP
+
+  kubectl get clusterrole ms360-azr-external-dns-wi -o yaml \
+    > $BACKUP/clusterrole-external-dns.yaml
+  kubectl get deploy ms360-azr-external-dns-wi -n ms360-platform-crd -o yaml \
+    > $BACKUP/deploy-external-dns.yaml
+  kubectl get svc ingress-nginx-controller -n ms360-platform-crd -o yaml \
+    > $BACKUP/svc-ingress-nginx.yaml
+
+  kubectl get deploy ms360-azr-external-dns-wi -n ms360-platform-crd \
+    -o jsonpath='{.spec.template.spec.containers[0].args}' | tr ',' '\n' \
+    > $BACKUP/args-before.txt
+  kubectl get svc ingress-nginx-controller -n ms360-platform-crd \
+    -o jsonpath='{.metadata.annotations}' > $BACKUP/svc-annotations-before.txt
+
+  ls -la $BACKUP
+
+Example backup folder used on PROD: platform-dns-backup-20260626-185227
+
+NOT required: AKS/etcd backup, Airflow/NFS backup (Airflow not touched in Stage 1).
+
+Optional: if Platform uses GitOps/Helm for external-dns, note Helm revision so
+live kubectl edits are not overwritten on next sync.
+
+
+ROLLBACK (if platform changes must be reverted)
+-----------------------------------------------
+  kubectl apply -f $BACKUP/clusterrole-external-dns.yaml
+  kubectl apply -f $BACKUP/deploy-external-dns.yaml
+  kubectl apply -f $BACKUP/svc-ingress-nginx.yaml
+  kubectl rollout restart deploy/ms360-azr-external-dns-wi -n ms360-platform-crd
+  kubectl rollout status deploy/ms360-azr-external-dns-wi -n ms360-platform-crd
+
+Keep backup folder until Airflow Stage 3 (Ingress cutover) is validated.
+
+
 PLATFORM CHANGES (PFB — Please Fix Before Airflow Ingress)
 ------------------------------------------------------------
 Mirror INT01 changes. Apply on prod-01-a1-prod-aks.
 
+**Execute now (non-interactive script on prod-01-tccli01):**
+
+  bash prod-platform-ingress-dns-fix.sh
+
+Or run the kubectl commands below step by step.
+
 --- Step 1: ClusterRole — allow external-dns to watch Ingress ---
 
-kubectl edit clusterrole ms360-azr-external-dns-wi
+kubectl patch clusterrole ms360-azr-external-dns-wi --type=json -p='[
+  {"op":"add","path":"/rules/-","value":{"apiGroups":["networking.k8s.io"],"resources":["ingresses"],"verbs":["get","list","watch"]}}
+]'
 
-Add under rules (if not already present):
-
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses
-  verbs:
-  - get
-  - list
-  - watch
+(If already present, patch returns error — safe to skip.)
 
 Verify:
 kubectl get clusterrole ms360-azr-external-dns-wi -o yaml | grep -A6 ingresses
@@ -112,34 +167,31 @@ kubectl get clusterrole ms360-azr-external-dns-wi -o yaml | grep -A6 ingresses
 
 --- Step 2: external-dns deployment — add ingress source ---
 
-kubectl edit deploy ms360-azr-external-dns-wi -n ms360-platform-crd
+kubectl patch deployment ms360-azr-external-dns-wi -n ms360-platform-crd --type=json -p='[
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--source=ingress"},
+  {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--ingress-class=nginx"}
+]'
 
-In container args, ensure BOTH sources exist (keep existing --source=service):
+Keep existing --source=service. After patch args should match INT:
 
-- --source=service
-- --source=ingress
-- --ingress-class=nginx
+  --source=service
+  --source=ingress
+  --ingress-class=nginx
 
-Example args fragment:
-  - --source=service
-  - --source=ingress
-  - --ingress-class=nginx
-  - --provider=azure-private-dns
-  - --registry=txt
-  - --txt-owner-id=prod-01-a1-prod-aks
-  ... (other existing args unchanged)
+Alternative (interactive): kubectl edit deploy ms360-azr-external-dns-wi -n ms360-platform-crd
 
 Note: Default Helm chart (ms360-azr-external-dns-wi-values.yaml) only lists
-      sources: [service]. PROD needs the kubectl edit OR Bitbucket/GitOps update.
+      sources: [service]. Persist fix in Bitbucket/GitOps (see GITOPS section).
 
 
 --- Step 3: Ingress controller Service — prod DNS zone annotation ---
 
-kubectl edit svc ingress-nginx-controller -n ms360-platform-crd
+# PROD current (wrong): *.prod-01-a1-prod-aks.
+# INT reference: int.corp.amdocs.azr
 
-Set annotation (PROD zone — not int.corp.amdocs.azr):
-
-  external-dns.alpha.kubernetes.io/hostname: 'prod.corp.amdocs.azr'
+kubectl annotate svc ingress-nginx-controller -n ms360-platform-crd \
+  external-dns.alpha.kubernetes.io/hostname='prod.corp.amdocs.azr' \
+  --overwrite
 
 This creates/updates apex A record @ in zone prod.corp.amdocs.azr -> 10.57.230.141
 
@@ -152,25 +204,95 @@ kubectl rollout status deploy/ms360-azr-external-dns-wi -n ms360-platform-crd
 Downtime: NONE for apps. Brief pause (~30-60s) in DNS sync only.
 
 
-POST-CHANGE VALIDATION (Platform)
----------------------------------
-# 1. external-dns logs — no "zone not found" for prod zone
+POST-CHANGE VALIDATION (Platform — Stage 1)
+-------------------------------------------
+Run ALL checks after Step 4 (external-dns restart).
+
+--- A. kubectl / config ---
+
+# external-dns args (must include service + ingress + nginx class)
+kubectl get deploy ms360-azr-external-dns-wi -n ms360-platform-crd \
+  -o jsonpath='{.spec.template.spec.containers[0].args}' | tr ',' '\n'
+
+# Expected:
+#   --source=service
+#   --source=ingress
+#   --ingress-class=nginx
+
+# ClusterRole ingresses rule
+kubectl get clusterrole ms360-azr-external-dns-wi -o yaml | grep -A6 ingresses
+
+# Ingress SVC annotation
+kubectl get svc ingress-nginx-controller -n ms360-platform-crd \
+  -o jsonpath='{.metadata.annotations.external-dns\.alpha\.kubernetes\.io/hostname}{"\n"}'
+# Expected: prod.corp.amdocs.azr
+
+# external-dns pod healthy
+kubectl get pods -n ms360-platform-crd -l app.kubernetes.io/name=external-dns
+kubectl rollout status deploy/ms360-azr-external-dns-wi -n ms360-platform-crd
+
+--- B. external-dns logs ---
+
 kubectl logs -n ms360-platform-crd deploy/ms360-azr-external-dns-wi --tail=50
 
-Expected GOOD log lines (pattern from INT):
+Expected GOOD (PROD validated 2026-06-26):
+  Sources:[service ingress] ... IngressClassNames:[nginx]
   Updating A record named '@' to '10.57.230.141' for Azure Private DNS zone 'prod.corp.amdocs.azr'.
   Updating TXT record named '@' to '"heritage=external-dns,external-dns/owner=prod-01-a1-prod-aks,...'
 
-Expected BAD (fix zone/annotation if seen):
-  Ignoring changes to '...' because a suitable Azure Private DNS zone was not found.
+Expected OK to ignore:
+  Ignoring changes to 'a-prod.corp.amdocs.azr' because a suitable Azure Private DNS zone was not found.
 
-# 2. Apex DNS resolves
+Expected BAD (fix zone/annotation if seen for prod zone):
+  Ignoring changes to 'prod.corp.amdocs.azr' because a suitable Azure Private DNS zone was not found.
+
+--- C. DNS from jump host ---
+
 nslookup prod.corp.amdocs.azr
-# Address: 10.57.230.141
+# Expected: Address: 10.57.230.141
 
-# 3. Existing apigw hostname still resolves (if already deployed on prod)
+# Optional: apigw on prod (adjust namespace if different)
 nslookup amd-apigw-stack-service.prod01-tcms.prod.corp.amdocs.azr
-# Address: 10.57.230.141  (confirm prod TCMS namespace if different)
+# Expected: 10.57.230.141
+
+
+POST-CHANGE VALIDATION (VDI — Stage 2)
+--------------------------------------
+Customer confirmed Stage 2 complete. Optional re-check from VDI before Stage 3:
+
+  nslookup prod.corp.amdocs.azr
+  # Expected: 10.57.230.141
+
+After Airflow Ingress deploy (Stage 3):
+  nslookup airflow.prod.corp.amdocs.azr
+  # Expected: 10.57.230.141
+
+  curl -vk https://airflow.prod.corp.amdocs.azr/health
+
+Note: ping to 10.57.230.141 may timeout (ICMP blocked) — use HTTPS/curl, not ping.
+
+
+POST-CHANGE VALIDATION (Airflow Ingress — Stage 3)
+--------------------------------------------------
+Run after airflow-srv Helm deploy + airflow-tls secret:
+
+  kubectl get ingress airflow-ingress -n prod01-k8s
+  # ADDRESS: 10.57.230.141
+
+  kubectl describe ingress airflow-ingress -n prod01-k8s
+
+  kubectl logs -n ms360-platform-crd deploy/ms360-azr-external-dns-wi --tail=30 | grep -i airflow
+
+  nslookup airflow.prod.corp.amdocs.azr
+  # Address: 10.57.230.141
+
+  curl -vk https://airflow.prod.corp.amdocs.azr/health
+
+  echo | openssl s_client -connect airflow.prod.corp.amdocs.azr:443 \
+    -servername airflow.prod.corp.amdocs.azr 2>/dev/null | openssl x509 -noout -subject -dates
+
+VDI: browser -> https://airflow.prod.corp.amdocs.azr -> local login (Stage 3)
+VDI: Sign in with ping (Stage 4 only)
 
 
 AIRFLOW STEPS (after platform validation — TC / Account DevOps)
@@ -270,16 +392,21 @@ INT validation:
 
 CHECKLIST
 ---------
-Platform (prod-01-a1-prod-aks):
-  [ ] Step 1 — ClusterRole ingresses rule
-  [ ] Step 2 — external-dns --source=ingress + --ingress-class=nginx
-  [ ] Step 3 — ingress SVC annotation prod.corp.amdocs.azr
-  [ ] Step 4 — Restart external-dns; rollout status OK
-  [ ] Logs: apex @ -> 10.57.230.141, no "zone not found"
-  [ ] nslookup prod.corp.amdocs.azr -> 10.57.230.141
-  [ ] Bitbucket / GitOps update
+Platform Stage 1 (prod-01-a1-prod-aks) — COMPLETED 2026-06-26:
+  [x] Backup exported (platform-dns-backup-YYYYMMDD-HHMMSS)
+  [x] Step 1 — ClusterRole ingresses rule
+  [x] Step 2 — external-dns --source=ingress + --ingress-class=nginx
+  [x] Step 3 — ingress SVC annotation prod.corp.amdocs.azr
+  [x] Step 4 — Restart external-dns; rollout status OK
+  [x] Logs: apex @ -> 10.57.230.141
+  [x] nslookup prod.corp.amdocs.azr -> 10.57.230.141
+  [ ] Bitbucket / GitOps update (Platform follow-up)
 
-Airflow Stage 3 — Ingress + TLS (cutover):
+VDI Stage 2 — COMPLETED (customer confirmed):
+  [x] DNS airflow.prod.corp.amdocs.azr path / zone forwarding (for Stage 3 host)
+  [x] Firewall/Citrix VDI -> 10.57.230.141:443
+
+Airflow Stage 3 — Ingress + TLS (cutover) — NEXT:
   [ ] airflow-tls secret (SAN: airflow.prod.corp.amdocs.azr)
   [ ] airflow-srv Helm ingress deploy (OAuth env NOT enabled yet)
   [ ] airflow Helm BASE_URL + ENABLE_PROXY_FIX only
